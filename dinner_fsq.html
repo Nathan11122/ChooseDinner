@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>今晚吃什麼？餐廳轉盤（Foursquare 版）</title>
+  <style>
+    :root { --bg:#0f1115; --card:#151926; --text:#e8ecf1; --muted:#97a0af; --accent:#7aa2ff; }
+    html,body{height:100%}
+    body{
+      margin:0; font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+      background: radial-gradient(1200px 800px at 70% -10%, #1b2136 0%, #10131c 55%, #0b0d12 100%);
+      color:var(--text); display:flex; align-items:center; justify-content:center; padding:24px;
+    }
+    .wrap{ width:min(1100px,100%); display:grid; gap:20px; grid-template-columns: 1.1fr 0.9fr; }
+    .card{
+      background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.00));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:18px; box-shadow:0 10px 30px rgba(0,0,0,.35);
+      padding:18px 18px 20px 18px;
+    }
+    h1{margin:.2rem 0 0.6rem 0; font-size:20px; letter-spacing:.2px}
+    .sub{color:var(--muted); font-size:13px; margin-top:-2px}
+    .controls{display:flex; gap:10px; flex-wrap:wrap; margin:10px 0 6px}
+    .btn{
+      background:var(--accent); color:#0a0d16; border:0; padding:10px 14px; border-radius:12px;
+      font-weight:700; cursor:pointer; transition: transform .05s ease; font-size:14px;
+    }
+    .btn:active{ transform: translateY(1px) }
+    .btn.secondary{ background:#253251; color:#cbd6ff; font-weight:600 }
+    .btn.ghost{ background:transparent; color:#cbd6ff; border:1px dashed #334269 }
+    select, input[type="number"]{
+      background:#151b2b; color:#d7def5; border:1px solid #2a3657; border-radius:12px; padding:8px 10px; font-size:14px;
+    }
+    label.switch{display:flex; align-items:center; gap:6px; font-size:12px; color:#9fb0d8}
+    .row{display:flex; gap:14px; align-items:center; flex-wrap:wrap}
+    .status{font-size:13px; color:#9fb0d8; min-height:18px}
+    .wheel-wrap{display:flex; align-items:center; justify-content:center; position:relative}
+    canvas{ width:100%; height:auto; aspect-ratio:1/1; max-width:560px; }
+    .pointer{
+      position:absolute; top:-4px; width:0; height:0;
+      border-left:18px solid transparent; border-right:18px solid transparent; border-bottom:26px solid #ffda79;
+      filter: drop-shadow(0 4px 6px rgba(0,0,0,.45));
+    }
+    .list{max-height:520px; overflow:auto; padding-right:6px}
+    .li{
+      padding:10px 12px; border:1px solid #2a2f46; border-radius:12px; margin:8px 0; background:#121728;
+      display:flex; justify-content:space-between; align-items:baseline; gap:10px;
+    }
+    .li b{font-size:14px}
+    .li small{color:#9aa6c9}
+    .badge{background:#233462; color:#b9ccff; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid #2c4583}
+    .winner{ margin-top:10px; padding:12px; border-radius:12px; background:#0f1a2f; border:1px solid #28406f; display:none; }
+    .winner.show{display:block}
+    .muted{color:#95a3c7; font-size:12px}
+    @media (max-width: 900px){ .wrap{ grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="card">
+      <h1>今晚吃什麼？餐廳轉盤（Foursquare 版）</h1>
+      <div class="sub">抓你目前位置 → 找附近餐廳（FSQ）→ 丟上轉盤 → 優雅開轉</div>
+
+      <div class="controls">
+        <button id="btnLocate" class="btn">📍 用我的位置找餐廳</button>
+        <button id="btnSpin" class="btn secondary" disabled>▶ 開始</button>
+        <button id="btnRespin" class="btn ghost" disabled>再轉一次</button>
+
+        <div class="row" style="margin-left:auto">
+          <label class="muted">半徑（公尺）</label>
+          <select id="radius">
+            <option value="500">500</option>
+            <option value="800" selected>800</option>
+            <option value="1200">1200</option>
+            <option value="2000">2000</option>
+          </select>
+          <label class="muted">最大選項數</label>
+          <select id="limit">
+            <option>6</option><option selected>10</option><option>12</option><option>16</option>
+          </select>
+          <label class="switch"><input type="checkbox" id="openNow"> 只顯示營業中</label>
+        </div>
+      </div>
+
+      <div class="status" id="status">尚未載入餐廳。請先點「用我的位置找餐廳」。</div>
+
+      <div class="wheel-wrap" style="margin-top:10px">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="900" height="900" aria-label="餐廳轉盤" role="img"></canvas>
+      </div>
+
+      <div id="winner" class="winner"></div>
+    </section>
+
+    <aside class="card">
+      <h1>候選清單</h1>
+      <div class="sub">最多顯示 16 家（為了轉盤清晰）。</div>
+      <div id="list" class="list"></div>
+    </aside>
+  </div>
+
+  <script>
+    // ========= 你的 Foursquare Places API 金鑰（v3）=========
+    // 到 https://location.foursquare.com/developer/ 申請，免費額度非常大。
+    // 注意：前端直接放金鑰有外流風險，正式版請參考文末「安全代理」方案。
+    const resp = await fetch(`/api/fsq?${params.toString()}`);
+
+    // ========= 狀態 =========
+    let restaurants = [];
+    let angle = 0;
+    let spinning = false;
+    let selectedIndex = -1;
+
+    const wheel = document.getElementById('wheel');
+    const ctx = wheel.getContext('2d');
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('list');
+    const winnerEl = document.getElementById('winner');
+    const btnLocate = document.getElementById('btnLocate');
+    const btnSpin = document.getElementById('btnSpin');
+    const btnRespin = document.getElementById('btnRespin');
+    const radiusSel = document.getElementById('radius');
+    const limitSel = document.getElementById('limit');
+    const openNowChk = document.getElementById('openNow');
+
+    // ========= 轉盤繪製 =========
+    function drawWheel(items){
+      const W = wheel.width, H = wheel.height;
+      const cx = W/2, cy = H/2, r = Math.min(W,H)*0.46;
+      ctx.clearRect(0,0,W,H);
+
+      if(items.length === 0){
+        ctx.save();
+        ctx.fillStyle = '#7b89a6';
+        ctx.font = 'bold 28px system-ui, -apple-system, "Segoe UI", Roboto';
+        ctx.textAlign = 'center';
+        ctx.fillText('— 這裡將出現美味選項 —', cx, cy);
+        ctx.restore();
+        return;
+      }
+
+      const n = items.length;
+      const slice = Math.PI * 2 / n;
+
+      for(let i=0;i<n;i++){
+        const start = angle + i * slice;
+        const end = start + slice;
+
+        const hue = (i * (360/n)) % 360;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, start, end);
+        ctx.closePath();
+        ctx.fillStyle = `hsl(${hue} 70% 55% / .9)`;
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(0,0,0,.35)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        const mid = start + slice/2;
+        ctx.save();
+        ctx.translate(cx + Math.cos(mid)*r*0.75, cy + Math.sin(mid)*r*0.75);
+        ctx.rotate(mid + Math.PI/2);
+        ctx.fillStyle = '#0b0f1a';
+        ctx.font = 'bold 22px system-ui, -apple-system, "Segoe UI", Roboto';
+        const label = items[i].name.length>18 ? items[i].name.slice(0,17)+'…' : items[i].name;
+        ctx.textAlign = 'center';
+        ctx.fillText(label, 0, 8);
+        ctx.restore();
+      }
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r*0.18, 0, Math.PI*2);
+      ctx.fillStyle = '#10182a';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,255,255,.18)';
+      ctx.stroke();
+
+      ctx.fillStyle = '#bcd2ff';
+      ctx.font = '600 16px system-ui,-apple-system,"Segoe UI",Roboto';
+      ctx.textAlign = 'center';
+      ctx.fillText('點 ▶ 開始', cx, cy+5);
+    }
+
+    function renderList(items){
+      listEl.innerHTML = '';
+      items.forEach((it, idx) => {
+        const div = document.createElement('div');
+        div.className = 'li';
+        const dist = typeof it.distance === 'number' ? `${it.distance}m` : '';
+        const cats = (it.categories || []).slice(0,2).map(c=>c.name).join('、');
+        div.innerHTML = `
+          <div>
+            <b>${idx+1}. ${escapeHtml(it.name)}</b><br>
+            <small>${escapeHtml(it.address || '')}</small>
+          </div>
+          <span class="badge">${escapeHtml(dist || cats || '—')}</span>
+        `;
+        listEl.appendChild(div);
+      });
+    }
+
+    function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+    // ========= 旋轉邏輯 =========
+    function spinWheel(){
+      if(spinning || restaurants.length === 0) return;
+      spinning = true;
+      btnSpin.disabled = true; btnRespin.disabled = true; winnerEl.classList.remove('show');
+      statusEl.textContent = '優雅旋轉中…';
+
+      const n = restaurants.length;
+      const slice = Math.PI*2 / n;
+      const targetIndex = Math.floor(Math.random()*n);
+      const targetAngle = (Math.PI*3/2) - (targetIndex * slice + slice/2);
+      const extraTurns = 4 + Math.floor(Math.random()*2);
+      const finalAngle = targetAngle + extraTurns * Math.PI*2;
+
+      const duration = 4200 + Math.random()*1000;
+      const start = performance.now();
+      const startAngle = angle;
+      const easeOutCubic = t => 1 - Math.pow(1-t, 3);
+
+      function frame(now){
+        const t = Math.min(1, (now - start)/duration);
+        const eased = easeOutCubic(t);
+        angle = startAngle + (finalAngle - startAngle) * eased;
+        drawWheel(restaurants);
+        if(t < 1){
+          requestAnimationFrame(frame);
+        }else{
+          spinning = false;
+          angle = ((angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+          selectedIndex = targetIndex;
+          const pick = restaurants[selectedIndex];
+          winnerEl.classList.add('show');
+          winnerEl.innerHTML = `
+            <div style="font-size:15px; color:#b9ccff; margin-bottom:6px">今晚就它吧：</div>
+            <div style="font-size:20px; font-weight:800; line-height:1.2">${escapeHtml(pick.name)}</div>
+            <div class="muted" style="margin-top:6px">
+              ${escapeHtml(pick.address || '')}
+              ${typeof pick.distance==='number' ? ' ｜ 距離 '+pick.distance+'m' : ''}
+            </div>
+          `;
+          statusEl.textContent = '已選出餐廳。祝用餐愉快！';
+          btnRespin.disabled = false;
+        }
+      }
+      requestAnimationFrame(frame);
+    }
+
+    // ========= Foursquare Places：/v3/places/search =========
+    async function locateAndFetch(){
+      winnerEl.classList.remove('show');
+      statusEl.textContent = '正在取得你的定位…';
+      btnSpin.disabled = true; btnRespin.disabled = true;
+
+      try{
+        const pos = await new Promise((res, rej)=>{
+          navigator.geolocation.getCurrentPosition(
+            p => res({lat:p.coords.latitude, lng:p.coords.longitude}),
+            err => rej(err),
+            { enableHighAccuracy:true, timeout:10000, maximumAge:0 }
+          );
+        });
+
+        statusEl.textContent = '正在搜尋附近餐廳（Foursquare）…';
+        const radius = parseInt(radiusSel.value, 10) || 800;
+        const limit  = Math.min(parseInt(limitSel.value,10) || 10, 16);
+        const openNow = openNowChk.checked;
+
+        const params = new URLSearchParams({
+          ll: `${pos.lat},${pos.lng}`,
+          radius: String(radius),
+          categories: '13065', // 13065 = Restaurants
+          limit: String(Math.min(50, Math.max(limit*3, limit))), // 抓多一點再篩
+          sort: 'DISTANCE',
+        });
+        if(openNow) params.set('open_now','true');
+
+        const resp = await fetch(`https://api.foursquare.com/v3/places/search?${params.toString()}`, {
+          headers: {
+            'Authorization': FSQ_API_KEY,
+            'Accept': 'application/json',
+            'Accept-Language': 'zh-TW'
+          }
+        });
+
+        if(!resp.ok){
+          const text = await resp.text();
+          throw new Error('Foursquare API error: ' + resp.status + ' ' + text);
+        }
+
+        const data = await resp.json();
+        const items = (data.results || []).map(p => ({
+          id: p.fsq_id,
+          name: p.name || '未命名餐廳',
+          address: p.location?.formatted_address || '',
+          distance: typeof p.distance === 'number' ? p.distance : null,
+          categories: (p.categories || []).map(c=>({id:c.id, name:c.name}))
+        }));
+
+        // 簡單過濾：名稱地址存在、距離合法
+        const cleaned = items.filter(x => x.name && x.address);
+
+        // 依距離排序，取前 limit，然後稍微洗牌避免每次都同一家在第一個扇區
+        cleaned.sort((a,b)=>(a.distance??9e9)-(b.distance??9e9));
+        restaurants = shuffle(cleaned).slice(0, limit);
+        angle = 0; selectedIndex = -1;
+
+        drawWheel(restaurants);
+        renderList(restaurants);
+
+        if(restaurants.length){
+          statusEl.textContent = `找到 ${cleaned.length} 家，已放入轉盤 ${restaurants.length} 家。`;
+          btnSpin.disabled = false;
+        }else{
+          statusEl.textContent = '附近似乎沒有可用的餐廳結果，換個半徑再試試？';
+        }
+
+      }catch(err){
+        console.error(err);
+        if(err && err.code === 1){
+          statusEl.textContent = '定位被拒：請允許取得位置，或改用 HTTPS / localhost。';
+        }else if(err && err.code === 3){
+          statusEl.textContent = '定位逾時：請再試一次或切換網路。';
+        }else{
+          statusEl.textContent = '取得位置或餐廳時發生錯誤。詳見 Console。';
+        }
+      }
+    }
+
+    function shuffle(arr){
+      const a = arr.slice();
+      for(let i=a.length-1;i>0;i--){
+        const j = Math.floor(Math.random()*(i+1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    // ========= 事件 =========
+    btnLocate.addEventListener('click', locateAndFetch);
+    btnSpin.addEventListener('click', spinWheel);
+    btnRespin.addEventListener('click', spinWheel);
+    radiusSel.addEventListener('change', ()=>{ if(restaurants.length) statusEl.textContent='半徑已變更，可重新抓取以更新清單。'; });
+    limitSel.addEventListener('change', ()=>{ if(restaurants.length){ restaurants = restaurants.slice(0, Math.min(parseInt(limitSel.value,10), 16)); drawWheel(restaurants); renderList(restaurants); } });
+
+    drawWheel([]);
+    document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='s' && !btnSpin.disabled) spinWheel(); });
+  </script>
+
+  <!-- 提醒：本頁不需要任何外部 SDK；只用 fetch 連 Foursquare Places API 即可 -->
+</body>
+</html>

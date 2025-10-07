@@ -1,0 +1,10 @@
+# netlify.toml
+[build]
+  publish = "."           # 你的靜態檔目錄（例如有用 Vite 的話改成 "dist"）
+  functions = "netlify/functions"
+
+# 開發時：本地代理 Functions，瀏覽器可直接走同源路徑
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
