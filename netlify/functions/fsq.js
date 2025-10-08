@@ -1,54 +1,61 @@
 // netlify/functions/fsq.js
-export async function handler(event, context) {
+export async function handler(event) {
   try {
-    const params = new URLSearchParams(event.queryStringParameters || {});
-    const ll = params.get('ll'); // "lat,lng"
-    const radius = params.get('radius') || '800';
-    const limit = Number(params.get('limit') || 10);
-    const open_now = params.get('open_now') === 'true';
+    const envKey = process.env.FSQ_API_KEY;
 
-    if (!ll) {
-      return json(400, { error: 'Missing required parameter: ll (latitude,longitude)' });
+    // 1) 先檢查環境變數是否存在
+    if (!envKey) {
+      return j(500, { ok:false, reason: 'ENV_MISSING', hint: 'FSQ_API_KEY not set on Netlify' });
     }
 
-    // 構造 Foursquare Places Search URL
+    // 2) 檢查格式：不能有引號/空白，且應以 fsq 開頭
+    const trimmed = envKey.trim();
+    if (trimmed !== envKey) {
+      return j(500, { ok:false, reason: 'KEY_HAS_WHITESPACE', hint: 'Remove leading/trailing spaces' });
+    }
+    if (!/^fsq/i.test(envKey)) {
+      return j(500, { ok:false, reason: 'NOT_SERVICE_API_KEY', hint: 'Use a Service API Key from "Service API Keys", not OAuth/Legacy' });
+    }
+    if (/^['"]|['"]$/.test(envKey)) {
+      return j(500, { ok:false, reason: 'KEY_WRAPPED_IN_QUOTES', hint: 'Do not include quotes in the value' });
+    }
+
+    // 3) 解析參數
+    const q = new URLSearchParams(event.queryStringParameters || {});
+    const ll = q.get('ll');
+    const radius = q.get('radius') || '800';
+    const limit = Math.min(50, Math.max(Number(q.get('limit') || 10) * 3, Number(q.get('limit') || 10)));
+    const openNow = q.get('open_now') === 'true';
+
+    if (!ll) return j(400, { ok:false, reason:'MISSING_PARAM_LL' });
+
+    // 4) 構造 FSQ URL
     const url = new URL('https://api.foursquare.com/v3/places/search');
     url.searchParams.set('ll', ll);
     url.searchParams.set('radius', radius);
-    url.searchParams.set('categories', '13065'); // Restaurants
-    // 多抓一些再前端篩
-    url.searchParams.set('limit', String(Math.min(50, Math.max(limit * 3, limit))));
+    url.searchParams.set('categories', '13065');
+    url.searchParams.set('limit', String(limit));
     url.searchParams.set('sort', 'DISTANCE');
-    if (open_now) url.searchParams.set('open_now', 'true');
+    if (openNow) url.searchParams.set('open_now', 'true');
 
+    // 5) 呼叫 FSQ
     const r = await fetch(url.toString(), {
       headers: {
-        Authorization: process.env.FSQ_API_KEY,   // ← 環境變數
+        Authorization: envKey,     // ← 必須是 Service API Key，不能有引號/空白
         Accept: 'application/json',
         'Accept-Language': 'zh-TW',
       },
     });
 
     const text = await r.text();
+    // 把狀態與簡短診斷一起回傳，方便你在 Network 面板直接看到
     return {
       statusCode: r.status,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        // 同網域呼叫通常不需要 CORS；若要跨網域，可打開下行
-        // 'Access-Control-Allow-Origin': '*',
-      },
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
       body: text,
     };
   } catch (err) {
-    console.error('Foursquare API proxy error:', err);
-    return json(500, { error: 'Internal Server Error', details: err.message });
+    return j(500, { ok:false, reason:'FUNCTION_ERROR', error: err.message });
   }
 }
-
-function json(status, obj) {
-  return {
-    statusCode: status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify(obj),
-  };
-}
+function j(status, body){ return { statusCode: status, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) }; }
