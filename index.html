@@ -266,6 +266,16 @@
 
     // ========= Foursquare（透過 Netlify Function 代理）=========
     async function locateAndFetch(){
+  // 🧭 Step 0：密語檢查
+  const code = prompt('請輸入密語才能搜尋餐廳 🍽️');
+  if (code === null) {
+    // 使用者按取消 → 直接結束，不彈第二次
+    return;
+  }
+  if (code.trim() !== '果豪') {
+    alert('密語錯誤 ❌');
+    return;
+  }
       winnerEl.classList.remove('show');
       statusEl.textContent = '正在取得你的定位…';
       btnSpin.disabled = true; btnRespin.disabled = true;
