@@ -6,13 +6,25 @@
   <title>今晚吃什麼？餐廳轉盤（Foursquare 版）</title>
   <style>
     :root { --bg:#0f1115; --card:#151926; --text:#e8ecf1; --muted:#97a0af; --accent:#7aa2ff; }
-    html,body{height:100%}
+
+    /* ✅ 允許頁面垂直滾動（修正手機搜尋後卡住、回不到上方的問題） */
+    html, body { height:auto; min-height:100%; }
     body{
-      margin:0; font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
+      margin:0;
+      font-family: ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial;
       background: radial-gradient(1200px 800px at 70% -10%, #1b2136 0%, #10131c 55%, #0b0d12 100%);
-      color:var(--text); display:flex; align-items:center; justify-content:center; padding:24px;
+      color:var(--text);
+      /* 原本用 flex 置中在行動裝置上容易吃掉滾動，改成一般流式排版 */
+      padding:16px;
     }
-    .wrap{ width:min(1100px,100%); display:grid; gap:20px; grid-template-columns: 1.1fr 0.9fr; }
+
+    .wrap{
+      width:min(1100px,100%);
+      display:grid; gap:20px;
+      grid-template-columns: 1.1fr 0.9fr;
+      margin:0 auto;          /* 置中容器 */
+    }
+
     .card{
       background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.00));
       border:1px solid rgba(255,255,255,.08);
@@ -53,7 +65,11 @@
     .winner{ margin-top:10px; padding:12px; border-radius:12px; background:#0f1a2f; border:1px solid #28406f; display:none; }
     .winner.show{display:block}
     .muted{color:#95a3c7; font-size:12px}
-    @media (max-width: 900px){ .wrap{ grid-template-columns: 1fr; } }
+
+    @media (max-width: 900px){
+      .wrap{ grid-template-columns: 1fr; }
+      .list{ max-height:400px; } /* 手機上避免清單過長撐爆畫面 */
+    }
   </style>
 </head>
 <body>
@@ -69,12 +85,13 @@
 
         <div class="row" style="margin-left:auto">
           <label class="muted">半徑（公尺）</label>
-          <select id="radius">
-            <option value="500">500</option>
-            <option value="800" selected>800</option>
-            <option value="1200">1200</option>
-            <option value="2000">2000</option>
-          </select>
+         <select id="radius">
+  <option value="200">200</option>
+  <option value="400">400</option>
+  <option value="600" selected>600</option>
+  <option value="1000">1000</option>
+</select>
+
           <label class="muted">最大選項數</label>
           <select id="limit">
             <option>6</option><option selected>10</option><option>12</option><option>16</option>
@@ -276,7 +293,6 @@
         });
         if(openNow) params.set('open_now','true');
 
-        // ✅ 改為呼叫你在 Netlify 的 Function，而不是直連 Foursquare
         const resp = await fetch(`/.netlify/functions/fsq?${params.toString()}`);
         if(!resp.ok){
           const text = await resp.text();
@@ -303,6 +319,9 @@
         if(restaurants.length){
           statusEl.textContent = `找到 ${cleaned.length} 家，已放入轉盤 ${restaurants.length} 家。`;
           btnSpin.disabled = false;
+
+          /* ✅ 手機體驗：抓完後自動把畫面捲回轉盤中央 */
+          wheel.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }else{
           statusEl.textContent = '附近似乎沒有可用的餐廳結果，換個半徑再試試？';
         }
@@ -329,9 +348,26 @@
     }
 
     // ========= 事件 =========
+
+    // ✅ 再轉一次：加入密語驗證（每次都要輸入；錯三次不給轉）
+    const RESPIN_CODE  = '果豪';
+    const RESPIN_TRIES = 3;
+    function askCodeThenSpin(){
+      let ok = false;
+      for(let i=0;i<RESPIN_TRIES;i++){
+        const val = (prompt(`輸入密語才能重骰（剩餘 ${RESPIN_TRIES - i} 次）：`) || '').trim();
+        if(val === RESPIN_CODE){ ok = true; break; }
+        if(i < RESPIN_TRIES - 1) alert('密語不正確，再試一次。');
+      }
+      if(!ok){ alert('密語錯誤，不能重骰。'); return; }
+      spinWheel();
+    }
+
     btnLocate.addEventListener('click', locateAndFetch);
     btnSpin.addEventListener('click', spinWheel);
-    btnRespin.addEventListener('click', spinWheel);
+    btnRespin.removeEventListener?.('click', spinWheel);
+    btnRespin.addEventListener('click', askCodeThenSpin);
+
     radiusSel.addEventListener('change', ()=>{ if(restaurants.length) statusEl.textContent='半徑已變更，可重新抓取以更新清單。'; });
     limitSel.addEventListener('change', ()=>{ if(restaurants.length){ restaurants = restaurants.slice(0, Math.min(parseInt(limitSel.value,10), 16)); drawWheel(restaurants); renderList(restaurants); } });
 
