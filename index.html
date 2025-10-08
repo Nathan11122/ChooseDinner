@@ -101,10 +101,6 @@
   </div>
 
   <script>
-    // ========= 你的 Foursquare Places API 金鑰（v3）=========
-    // 到 https://location.foursquare.com/developer/ 申請，免費額度非常大。
-    // 注意：前端直接放金鑰有外流風險，正式版請參考文末「安全代理」方案。
-
     // ========= 狀態 =========
     let restaurants = [];
     let angle = 0;
@@ -251,7 +247,7 @@
       requestAnimationFrame(frame);
     }
 
-    // ========= Foursquare Places：/v3/places/search =========
+    // ========= Foursquare（透過 Netlify Function 代理）=========
     async function locateAndFetch(){
       winnerEl.classList.remove('show');
       statusEl.textContent = '正在取得你的定位…';
@@ -280,17 +276,11 @@
         });
         if(openNow) params.set('open_now','true');
 
-        const resp = await fetch(`https://api.foursquare.com/v3/places/search?${params.toString()}`, {
-          headers: {
-            'Authorization': FSQ_API_KEY,
-            'Accept': 'application/json',
-            'Accept-Language': 'zh-TW'
-          }
-        });
-
+        // ✅ 改為呼叫你在 Netlify 的 Function，而不是直連 Foursquare
+        const resp = await fetch(`/.netlify/functions/fsq?${params.toString()}`);
         if(!resp.ok){
           const text = await resp.text();
-          throw new Error('Foursquare API error: ' + resp.status + ' ' + text);
+          throw new Error('Proxy error: ' + resp.status + ' ' + text);
         }
 
         const data = await resp.json();
@@ -302,10 +292,7 @@
           categories: (p.categories || []).map(c=>({id:c.id, name:c.name}))
         }));
 
-        // 簡單過濾：名稱地址存在、距離合法
         const cleaned = items.filter(x => x.name && x.address);
-
-        // 依距離排序，取前 limit，然後稍微洗牌避免每次都同一家在第一個扇區
         cleaned.sort((a,b)=>(a.distance??9e9)-(b.distance??9e9));
         restaurants = shuffle(cleaned).slice(0, limit);
         angle = 0; selectedIndex = -1;
@@ -352,12 +339,6 @@
     document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='s' && !btnSpin.disabled) spinWheel(); });
   </script>
 
-  <!-- 提醒：本頁不需要任何外部 SDK；只用 fetch 連 Foursquare Places API 即可 -->
-   <script type="module">
-  const resp = await fetch(`/api/fsq?${params.toString()}`);
-  const data = await resp.json();
-  console.log(data);
-</script>
-
+  <!-- 本頁前端不含任何金鑰；金鑰請放在 Netlify 環境變數 FSQ_API_KEY，並由 /.netlify/functions/fsq 代呼叫 -->
 </body>
 </html>
