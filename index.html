@@ -96,7 +96,7 @@
           <select id="limit">
             <option>6</option><option selected>10</option><option>12</option><option>16</option>
           </select>
-          <label class="switch"><input type="checkbox" id="openNow"> 只顯示營業中</label>
+          
         </div>
       </div>
 
@@ -134,7 +134,7 @@
     const btnRespin = document.getElementById('btnRespin');
     const radiusSel = document.getElementById('radius');
     const limitSel = document.getElementById('limit');
-    const openNowChk = document.getElementById('openNow');
+  
 
     // ========= 轉盤繪製 =========
     function drawWheel(items){
@@ -282,7 +282,7 @@
         statusEl.textContent = '正在搜尋附近餐廳（Foursquare）…';
         const radius = parseInt(radiusSel.value, 10) || 800;
         const limit  = Math.min(parseInt(limitSel.value,10) || 10, 16);
-        const openNow = openNowChk.checked;
+        
 
         const params = new URLSearchParams({
           ll: `${pos.lat},${pos.lng}`,
@@ -291,7 +291,7 @@
           limit: String(Math.min(50, Math.max(limit*3, limit))), // 抓多一點再篩
           sort: 'DISTANCE',
         });
-        if(openNow) params.set('open_now','true');
+        
 
         const resp = await fetch(`/.netlify/functions/fsq?${params.toString()}`);
         if(!resp.ok){
